@@ -1,0 +1,53 @@
+@import url('https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { font-family: 'Comic Neue', 'Comic Sans MS', 'Chalkboard SE', cursive; }
+  body { background-color: #F8F9FC; color: #1C1916; }
+  * { -webkit-tap-highlight-color: transparent; }
+  input, select, textarea { outline: none; }
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-xl border border-border shadow-sm;
+  }
+  .btn-primary {
+    @apply bg-brand-700 text-white font-semibold rounded-xl px-4 py-3 active:bg-brand-800 transition-colors;
+  }
+  .btn-ghost {
+    @apply bg-transparent border border-border text-text2 rounded-xl px-4 py-3 active:bg-cream transition-colors;
+  }
+  .input-base {
+    @apply w-full bg-cream border border-border rounded-xl px-3 py-2.5 text-text1 text-sm focus:border-brand-600 focus:ring-1 focus:ring-brand-600 transition;
+  }
+  select.input-base {
+    @apply pr-12;
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' viewBox='0 0 24 24'%3E%3Cpath stroke='%2364748b' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-size: 14px;
+    background-position: right 0.95rem center;
+  }
+  select.input-base::-ms-expand { display: none; }
+  .label {
+    @apply text-xs font-medium text-text2 uppercase tracking-wide mb-1 mt-3 block;
+  }
+  .badge-stock   { @apply bg-blue-50  text-blue-700  text-xs px-2 py-0.5 rounded-full; }
+  .badge-vendido { @apply bg-green-50 text-green-700 text-xs px-2 py-0.5 rounded-full; }
+  .badge-devuelto{ @apply bg-red-50   text-red-700   text-xs px-2 py-0.5 rounded-full; }
+  .badge-cancelada{ @apply bg-gray-100 text-gray-500 text-xs px-2 py-0.5 rounded-full; }
+}
+
+/* Scrollbar sutil */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #E8E0D6; border-radius: 2px; }
+
+/* Ocultar scrollbar en bottom nav */
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }

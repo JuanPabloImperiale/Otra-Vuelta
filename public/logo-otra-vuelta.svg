@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Otra Vuelta Moda Circular">
+  <defs>
+    <path id="topArc" d="M 88 256 A 168 168 0 0 1 424 256" />
+    <path id="bottomArc" d="M 424 256 A 168 168 0 0 1 88 256" />
+  </defs>
+
+  <rect width="100%" height="100%" fill="#ffffff"/>
+
+  <circle cx="256" cy="256" r="230" fill="none" stroke="#111111" stroke-width="10"/>
+  <circle cx="256" cy="256" r="158" fill="none" stroke="#111111" stroke-width="9"/>
+
+  <text font-family="Arial, Helvetica, sans-serif" font-size="50" font-weight="700" letter-spacing="4" fill="#111111">
+    <textPath href="#topArc" startOffset="50%" text-anchor="middle">OTRA VUELTA</textPath>
+  </text>
+
+  <text font-family="Arial, Helvetica, sans-serif" font-size="48" font-weight="700" letter-spacing="4" fill="#111111">
+    <textPath href="#bottomArc" startOffset="50%" text-anchor="middle">MODA CIRCULAR</textPath>
+  </text>
+
+  <circle cx="96" cy="274" r="8" fill="#111111"/>
+  <circle cx="416" cy="274" r="8" fill="#111111"/>
+
+  <path d="M256 365c-8-7-17-14-27-22-10-8-20-16-29-25-10-9-19-19-26-30-8-12-12-24-12-38 0-21 14-41 36-48 19-6 42-1 58 16 16-17 39-22 58-16 22 7 36 27 36 48 0 14-4 26-12 38-7 11-16 21-26 30-9 9-19 17-29 25-10 8-19 15-27 22z" fill="#c9302c"/>
+</svg>
