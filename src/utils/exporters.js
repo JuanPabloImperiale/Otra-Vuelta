@@ -107,6 +107,7 @@ export function parsearCSV(text) {
 // ── PDF REPORTE PROVEEDOR ────────────────────────────────────────────────────
 export function generarPDFProveedor({ proveedor, stockItems = [], pendienteCobro = [], listosPagar = [], historialPagos = [], devueltosItems = [], productos = [] }) {
   const productosById = Object.fromEntries(productos.map(p => [p.id, p]))
+  const devueltosSolo = devueltosItems.filter(p => !p.vendido)
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const W = 210, margin = 14
 
@@ -148,8 +149,8 @@ export function generarPDFProveedor({ proveedor, stockItems = [], pendienteCobro
     ['Listo para pagar (cobrado al 100%)',    listosPagar.length,   fmt$(totalListo)],
     ['Total pagado históricamente',           '—',                  fmt$(totalPagado)],
   ]
-  if (devueltosItems.length) {
-    summaryBody.push(['Productos devueltos', devueltosItems.length, '—'])
+  if (devueltosSolo.length) {
+    summaryBody.push(['Productos devueltos', devueltosSolo.length, '—'])
   }
   
   autoTable(doc, {
@@ -221,13 +222,13 @@ export function generarPDFProveedor({ proveedor, stockItems = [], pendienteCobro
   }
 
   // Productos devueltos
-  if (devueltosItems.length) {
+  if (devueltosSolo.length) {
     if (y > 230) { doc.addPage(); y = 20 }
-    sectionTitle(`PRODUCTOS DEVUELTOS (${devueltosItems.length} prendas)`, [220, 100, 100])
+    sectionTitle(`PRODUCTOS DEVUELTOS (${devueltosSolo.length} prendas)`, [220, 100, 100])
     autoTable(doc, {
       startY: y,
       head: [['Producto', 'Precio original', 'Motivo/Notas']],
-      body: devueltosItems.map(p => [
+      body: devueltosSolo.map(p => [
         (p.notas || p.id || '').slice(0, 40),
         fmt$(p.precio),
         p.motivoDevolucion || '—',

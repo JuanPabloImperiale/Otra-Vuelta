@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useApp } from '../context/AppContext'
-import { calcAcreditadoPorVenta, calcTotalPorVenta } from '../utils/calculos'
+import { calcAcreditadoPorVenta, calcTotalPorVenta, calcCierrePorVenta } from '../utils/calculos'
 import { fmt$, fmtDate, today, thisMonth, monthLabel } from '../utils/formatters'
 import { Modal, SearchBar, Button, Input, SectionHeader, EmptyState, InfoRow, Tabs } from '../components/ui'
 
@@ -41,18 +41,17 @@ export default function Gastos() {
     calcTotalPorVenta(ventas)
   , [ventas])
 
+  const cierrePorVenta = useMemo(() =>
+    calcCierrePorVenta(ventas, cobros, hoy, mediosPago)
+  , [ventas, cobros, hoy, mediosPago])
+
   const statsMes = useMemo(() => {
-    const ventasMes = ventas.filter(v => v.FechaVenta?.startsWith(mes) && !v.cancelada)
-    const ventasCerradas = ventasMes.filter(v => {
-      const acred = (acreditadoPorVenta[v.IDVenta]?.acreditado) || 0
-      const total = totalPorVenta[v.IDVenta] || 0
-      return acred >= total && total > 0
-    })
+    const ventasCerradas = ventas.filter(v => !v.cancelada && cierrePorVenta[v.IDVenta]?.fechaCierre?.startsWith(mes))
     const ganancia = ventasCerradas.reduce((s, v) => s + (v.GananciaNegocio || 0), 0)
     const facturado = ventasCerradas.reduce((s, v) => s + (v.PrecioVentaFinal || 0), 0)
     const gastosMes = gastos.filter(g => (g.mes || g.fecha?.slice(0, 7)) === mes).reduce((s, g) => s + (g.monto || 0), 0)
     return { ganancia, facturado, gastosMes, balance: ganancia - gastosMes, prendas: ventasCerradas.length }
-  }, [ventas, cobros, gastos, mes, acreditadoPorVenta, totalPorVenta, cuentasCorrientes])
+  }, [ventas, gastos, mes, cierrePorVenta])
 
   const gastosFiltrados = useMemo(() => {
     // Gastos del mes actual
@@ -103,12 +102,8 @@ export default function Gastos() {
   const balanceMes = useMemo(() => {
     const ventasMes = ventas.filter(v => v.FechaVenta?.startsWith(mes) && !v.cancelada)
 
-    // Ventas 100% cobradas
-    const cerradas = ventasMes.filter(v => {
-      const acred = (acreditadoPorVenta[v.IDVenta]?.acreditado) || 0
-      const total = totalPorVenta[v.IDVenta] || 0
-      return acred >= total && total > 0
-    })
+    // Ventas cerradas en este mes (por acreditación real)
+    const cerradas = ventas.filter(v => !v.cancelada && cierrePorVenta[v.IDVenta]?.fechaCierre?.startsWith(mes))
 
     // Pendientes de cobro
     const pendienteCobro = ventasMes.filter(v => {
@@ -206,6 +201,31 @@ export default function Gastos() {
       porProv[id].ganancia += Number(v.GananciaNegocio) || 0
     })
 
+    // Ventas incluidas en el balance del mes (agrupadas por IDVenta)
+    const ventasCierreMap = {}
+    cerradas.forEach((v) => {
+      const idVenta = v.IDVenta
+      if (!idVenta) return
+      if (!ventasCierreMap[idVenta]) {
+        ventasCierreMap[idVenta] = {
+          idVenta,
+          fechaVenta: v.FechaVenta || '',
+          fechaCierre: cierrePorVenta[idVenta]?.fechaCierre || '',
+          prendas: 0,
+          totalVenta: 0,
+          totalCosto: 0,
+          ganancia: 0,
+        }
+      }
+      ventasCierreMap[idVenta].prendas += 1
+      ventasCierreMap[idVenta].totalVenta += Number(v.PrecioVentaFinal) || 0
+      ventasCierreMap[idVenta].totalCosto += Number(v.CostoProveedor) || 0
+      ventasCierreMap[idVenta].ganancia += Number(v.GananciaNegocio) || 0
+    })
+
+    const ventasCierreList = Object.values(ventasCierreMap)
+      .sort((a, b) => b.fechaCierre.localeCompare(a.fechaCierre) || b.idVenta.localeCompare(a.idVenta))
+
     return {
       prendas: cerradas.length,
       prendasPendCobro: pendienteCobro.length,
@@ -214,15 +234,16 @@ export default function Gastos() {
       pagadosMes, pendientePagosProv,
       cobrosPorMedio, totalAcreditadoVentasMes,
       cobrosFuturosPorMedio, totalCobradoMesAcreditaFuturo,
+      ventasCierreList,
       porCategoria: Object.entries(porCategoria).sort((a,b) => b[1].ventas - a[1].ventas),
       topProvs: Object.values(porProv).sort((a,b) => b.ganancia - a.ganancia).slice(0, 8),
       margenBruto: totalVentas > 0 ? ((gananciaBruta / totalVentas) * 100).toFixed(1) : '0',
     }
-  }, [ventas, cobros, pagos, gastos, mes, hoy, acreditadoPorVenta, totalPorVenta, cuentasCorrientes, mediosPago])
+  }, [ventas, cobros, pagos, gastos, mes, hoy, acreditadoPorVenta, totalPorVenta, cierrePorVenta, mediosPago])
 
   return (
     <div>
-      <SectionHeader title="Gastos & Balance"
+      <SectionHeader title="Ganancia & Balance"
         action={tab === 'gastos' && <Button size="sm" onClick={() => setM({ _new: true, descripcion: '', monto: '', mes: mes, fecha: mes + '-01', recurrente: false })}>+ Gasto</Button>}
       />
 
@@ -371,6 +392,37 @@ export default function Gastos() {
               <div className="mt-2 bg-yellow-50 border border-yellow-200 rounded-lg p-2 text-xs text-yellow-800">
                 ⏳ {balanceMes.prendasPendCobro} prenda(s) vendidas aún sin cobrar al 100% — no incluidas en este balance.
               </div>
+            )}
+          </div>
+
+          {/* Ventas incluidas en el balance */}
+          <div className="card p-4">
+            <div className="text-xs font-semibold text-text3 uppercase tracking-wide mb-3">Ventas asociadas al balance ({monthLabel(mes)})</div>
+            {balanceMes.ventasCierreList.length === 0 ? (
+              <div className="text-sm text-text3">No hay ventas cerradas para este mes.</div>
+            ) : (
+              <>
+                <div className="text-xs text-text3 mb-2">
+                  Cada venta aparece una sola vez según su fecha de cierre (acreditación completa).
+                </div>
+                <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                  {balanceMes.ventasCierreList.map((v) => (
+                    <div key={v.idVenta} className="border border-border rounded-xl p-3 bg-white">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-sm font-semibold text-text1">{v.idVenta}</div>
+                        <div className="text-sm font-bold text-green-700">{fmt$(v.totalVenta)}</div>
+                      </div>
+                      <div className="text-xs text-text3 mt-1">
+                        Cierre: {fmtDate(v.fechaCierre)} · Venta: {fmtDate(v.fechaVenta)} · {v.prendas} prenda(s)
+                      </div>
+                      <div className="mt-2 flex items-center justify-between text-xs">
+                        <span className="text-text3">Costo proveedor: {fmt$(v.totalCosto)}</span>
+                        <span className="font-semibold text-brand-700">Ganancia: {fmt$(v.ganancia)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
 

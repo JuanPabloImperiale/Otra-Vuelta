@@ -18,8 +18,8 @@ export default function Proveedores() {
     proveedores.forEach(p => { map[p.id] = { stock: 0, vendidos: 0, devueltos: 0 } })
     productos.forEach(p => {
       if (!map[p.proveedorID]) return
-      if (p.devolucion) map[p.proveedorID].devueltos++
-      else if (p.vendido) map[p.proveedorID].vendidos++
+      if (p.vendido) map[p.proveedorID].vendidos++
+      else if (p.devolucion) map[p.proveedorID].devueltos++
       else map[p.proveedorID].stock++
     })
     // Deuda pendiente (CC-aware)
@@ -214,7 +214,7 @@ function FichaProveedor({ proveedor, productos, ventas, cobros, pagos, cuentasCo
   const totalPendCob = pendienteCobro.reduce((s, v) => s + (v.CostoProveedor || 0), 0)
 
   const devueltosItems = useMemo(() =>
-    productos.filter(p => p.proveedorID === proveedor.id && p.devolucion)
+    productos.filter(p => p.proveedorID === proveedor.id && p.devolucion && !p.vendido)
   , [productos, proveedor.id])
 
   const generarReporte = () => {

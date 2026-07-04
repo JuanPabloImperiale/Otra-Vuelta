@@ -18,7 +18,7 @@ export default function Inventario({ navigation, setSection }) {
     let list = productos
     if (filtroEstado === 'stock')    list = list.filter(p => p.enStock && !p.vendido && !p.devolucion)
     else if (filtroEstado === 'vendido')   list = list.filter(p => p.vendido && !p.cancelada)
-    else if (filtroEstado === 'devuelto')  list = list.filter(p => p.devolucion)
+    else if (filtroEstado === 'devuelto')  list = list.filter(p => p.devolucion && !p.vendido)
     else if (filtroEstado === 'incompletos') list = list.filter(p => getProductoIssues(p).length > 0)
     if (focusProductIds?.length) list = list.filter(p => focusProductIds.includes(p.id))
     if (filtroProv) list = list.filter(p => p.proveedorID === filtroProv)
@@ -59,7 +59,7 @@ export default function Inventario({ navigation, setSection }) {
   const contadores = useMemo(() => ({
     stock:    productos.filter(p => p.enStock && !p.vendido && !p.devolucion).length,
     vendido:  productos.filter(p => p.vendido).length,
-    devuelto: productos.filter(p => p.devolucion).length,
+    devuelto: productos.filter(p => p.devolucion && !p.vendido).length,
     incompletos: productos.filter(p => getProductoIssues(p).length > 0).length,
   }), [productos])
 
@@ -167,7 +167,7 @@ function ProductoCard({ producto: p, diasParada, onClick }) {
         <div className="flex gap-2 mt-2 flex-wrap">
           {issues.length > 0 && <span className="bg-red-50 text-red-700 text-xs px-2 py-0.5 rounded-full">⚠️ Incompleto</span>}
           {p.vendido    && <span className="badge-vendido">Vendida</span>}
-          {p.devolucion && <span className="badge-devuelto">Devuelta</span>}
+          {p.devolucion && !p.vendido && <span className="badge-devuelto">Devuelta</span>}
           {!p.vendido && !p.devolucion && !parado && <span className="badge-stock">En stock</span>}
           {parado && <span className="bg-yellow-100 text-yellow-700 text-xs px-2 py-0.5 rounded-full">⚠️ {diffDays(p.fechaIngreso)}d parada</span>}
           <span className="text-xs text-text3 px-2 py-0.5 bg-gray-50 rounded-full">{p.id}</span>

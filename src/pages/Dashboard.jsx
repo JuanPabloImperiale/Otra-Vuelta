@@ -5,7 +5,7 @@ import {
 } from 'recharts'
 import { useApp } from '../context/AppContext'
 import { fmt$, today, thisMonth, monthLabel, diffDays } from '../utils/formatters'
-import { calcAcreditadoPorVenta, calcTotalPorVenta } from '../utils/calculos'
+import { calcAcreditadoPorVenta, calcTotalPorVenta, calcCierrePorVenta } from '../utils/calculos'
 import { StatCard, SectionHeader, Tabs } from '../components/ui'
 import { MEDIO_COLORS } from '../constants'
 import { getProductoIssues, getVentaItemIssues } from '../utils/dataQuality'
@@ -44,19 +44,19 @@ export default function Dashboard({ setSection }) {
   // ── Cobros acreditados por venta (CC-aware) ───────────────────────────────
   const acreditadoPorVenta = useMemo(() =>
     calcAcreditadoPorVenta(cobros, cuentasCorrientes, hoy, mediosPago)
-  , [cobros, cuentasCorrientes, hoy])
+  , [cobros, cuentasCorrientes, hoy, mediosPago])
 
   const totalPorVenta = useMemo(() =>
     calcTotalPorVenta(ventas)
   , [ventas])
 
+  const cierrePorVenta = useMemo(() =>
+    calcCierrePorVenta(ventas, cobros, hoy, mediosPago)
+  , [ventas, cobros, hoy, mediosPago])
+
   // ── Stats del mes ─────────────────────────────────────────────────────────
   const statsMes = useMemo(() => {
-    const ventasMes = ventas.filter(v => v.FechaVenta?.startsWith(mes) && !v.cancelada)
-    const ventasCerradas = ventasMes.filter(v => {
-      const a = acreditadoPorVenta[v.IDVenta]
-      return a && a.acreditado >= (totalPorVenta[v.IDVenta] || 0) && totalPorVenta[v.IDVenta] > 0
-    })
+    const ventasCerradas = ventas.filter(v => !v.cancelada && cierrePorVenta[v.IDVenta]?.fechaCierre?.startsWith(mes))
     const ganancia  = ventasCerradas.reduce((s, v) => s + (v.GananciaNegocio || 0), 0)
     const facturado = ventasCerradas.reduce((s, v) => s + (v.PrecioVentaFinal || 0), 0)
 
@@ -86,7 +86,7 @@ export default function Dashboard({ setSection }) {
       .reduce((s, v) => s + (v.CostoProveedor || 0), 0)
 
     return { ingresosAcreditados, ganancia, facturado, gastosMes, bnaPendiente, deudaProv, balance: ganancia - gastosMes }
-  }, [ventas, cobros, pagos, gastos, mes, hoy, acreditadoPorVenta, totalPorVenta])
+  }, [ventas, cobros, pagos, gastos, mes, hoy, acreditadoPorVenta, totalPorVenta, cierrePorVenta, mediosPago])
 
   // ── Stock parado ──────────────────────────────────────────────────────────
   const diasParada = config?.diasParada || 60
@@ -129,35 +129,39 @@ export default function Dashboard({ setSection }) {
     for (let i = 5; i >= 0; i--) {
       const d = new Date(); d.setMonth(d.getMonth() - i)
       const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      const ventasM = ventas.filter(v => v.FechaVenta?.startsWith(ym) && !v.cancelada)
+      const ventasM = ventas.filter(v => !v.cancelada && cierrePorVenta[v.IDVenta]?.fechaCierre?.startsWith(ym))
       const ganancia = ventasM.reduce((s, v) => s + (v.GananciaNegocio || 0), 0)
       const facturado = ventasM.reduce((s, v) => s + (v.PrecioVentaFinal || 0), 0)
       meses.push({ mes: monthLabel(ym), facturado, ganancia, prendas: ventasM.length })
     }
     return meses
-  }, [ventas])
+  }, [ventas, cierrePorVenta])
 
   // ── Pie medios de cobro (mes actual) ─────────────────────────────────────
   const dataMedios = useMemo(() => {
+    const bnaSet = new Set(mediosPago.filter(m => m.esBNA).map(m => m.id))
+    if (bnaSet.size === 0) bnaSet.add('BNA')
     const map = {}
-    cobros.filter(c => c.fecha?.startsWith(mes)).forEach(c => {
+    cobros.forEach(c => {
+      const fe = (bnaSet.has(c.medio) && c.fechaReal) ? c.fechaReal : c.fecha
+      if (!fe?.startsWith(mes)) return
       map[c.medio] = (map[c.medio] || 0) + (c.monto || 0)
     })
     const labels = Object.fromEntries(mediosPago.map(m => [m.id, m.label]))
     return Object.entries(map).map(([medio, monto]) => ({ name: labels[medio] || medio, value: monto, medio }))
-  }, [cobros, mes])
+  }, [cobros, mes, mediosPago])
 
   // ── Top proveedores del mes ───────────────────────────────────────────────
   const topProveedores = useMemo(() => {
     const map = {}
-    ventas.filter(v => v.FechaVenta?.startsWith(mes) && !v.cancelada).forEach(v => {
+    ventas.filter(v => !v.cancelada && cierrePorVenta[v.IDVenta]?.fechaCierre?.startsWith(mes)).forEach(v => {
       if (!map[v.ProveedorID]) map[v.ProveedorID] = { nombre: v.ProveedorNombre || v.ProveedorID, monto: 0, ganancia: 0, prendas: 0 }
       map[v.ProveedorID].monto    += v.PrecioVentaFinal || 0
       map[v.ProveedorID].ganancia += v.GananciaNegocio  || 0
       map[v.ProveedorID].prendas  += 1
     })
     return Object.values(map).sort((a, b) => b.monto - a.monto).slice(0, 5)
-  }, [ventas, mes])
+  }, [ventas, mes, cierrePorVenta])
 
   const fmtK = (n) => n >= 1000 ? `$${(n / 1000).toFixed(0)}k` : fmt$(n)
   const goToVentasErrores = (ids = null) => setSection('ventas', { filter: 'errores', ids })

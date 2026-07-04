@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
 import {
   collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc,
   writeBatch, getDoc, increment, serverTimestamp, deleteField,
@@ -23,7 +23,7 @@ const EPSILON = 0.0001
 
 const SECTION_COLLECTIONS = {
   dashboard: ['productos', 'ventas', 'cobros', 'pagos', 'gastos', 'cuentasCorrientes'],
-  inventario: ['productos', 'proveedores'],
+  inventario: ['productos', 'proveedores', 'ventas'],
   ventas: ['ventas', 'cobros', 'pagos', 'productos'],
   cobros: ['ventas', 'cobros', 'pagos'],
   proveedores: ['proveedores', 'productos', 'ventas', 'cobros', 'pagos', 'cuentasCorrientes'],
@@ -57,6 +57,26 @@ async function ensureCounterAtLeast(field, value) {
 
 const normalizeClienteName = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ')
 const uniqueVentaIds = (...groups) => [...new Set(groups.flat().filter(Boolean))]
+
+function normalizeBoolean(value, fallback = false) {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value === 1
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase()
+    if (['true', '1', 'si', 'sí', 'yes'].includes(v)) return true
+    if (['false', '0', 'no', ''].includes(v)) return false
+  }
+  return fallback
+}
+
+function normalizeProductoStatus(producto = {}) {
+  const vendido = normalizeBoolean(producto.vendido, false)
+  const devolucionRaw = normalizeBoolean(producto.devolucion, false)
+  const devolucion = vendido ? false : devolucionRaw
+  const enStockRaw = normalizeBoolean(producto.enStock, !vendido && !devolucion)
+  const enStock = (vendido || devolucion) ? false : enStockRaw
+  return { vendido, devolucion, enStock }
+}
 
 function nextMonthSameDay(dateISO) {
   const base = new Date(`${dateISO}T00:00:00`)
@@ -92,6 +112,7 @@ export function AppProvider({ children }) {
   const [configReady,       setConfigReady]       = useState(false)
   const [sectionReady,      setSectionReady]      = useState(false)
   const [bootstrapped,      setBootstrapped]      = useState(false)
+  const statusRepairInFlight = useRef(new Set())
 
   // ── Control de visibilidad (pausa listeners en segundo plano) ───────────
   useEffect(() => {
@@ -162,7 +183,12 @@ export function AppProvider({ children }) {
           return null
         }
         return onSnapshot(col(colName), snap => {
-          setter(snap.docs.map(d => ({ ...d.data(), _docId: d.id })))
+          const rows = snap.docs.map(d => ({ ...d.data(), _docId: d.id }))
+          if (colName === 'productos') {
+            setter(rows.map((p) => ({ ...p, ...normalizeProductoStatus(p) })))
+          } else {
+            setter(rows)
+          }
           markCollectionReady(colName)
         }, () => markCollectionReady(colName))
       })
@@ -191,6 +217,81 @@ export function AppProvider({ children }) {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3000)
   }, [])
+
+  // Auto-repara estados inconsistentes o mal tipados de productos.
+  // En caso de conflicto prevalece vendido.
+  useEffect(() => {
+    const inconsistentes = productos.filter((p) => {
+      if (!p?.id || statusRepairInFlight.current.has(p.id)) return false
+      const normalized = normalizeProductoStatus(p)
+      return (
+        typeof p.vendido !== 'boolean' ||
+        typeof p.devolucion !== 'boolean' ||
+        typeof p.enStock !== 'boolean' ||
+        p.vendido !== normalized.vendido ||
+        p.devolucion !== normalized.devolucion ||
+        p.enStock !== normalized.enStock
+      )
+    })
+    if (!inconsistentes.length) return
+
+    inconsistentes.forEach((p) => {
+      statusRepairInFlight.current.add(p.id)
+      const normalized = normalizeProductoStatus(p)
+      updateDoc(ref('productos', p.id), normalized)
+        .catch((err) => {
+          // eslint-disable-next-line no-console
+          console.error('No se pudo reconciliar estado de producto:', p.id, err)
+        })
+        .finally(() => {
+          statusRepairInFlight.current.delete(p.id)
+        })
+    })
+  }, [productos])
+
+  // Si existe una venta activa para una prenda, el estado de producto debe ser vendido.
+  useEffect(() => {
+    if (!productos.length || !ventas.length) return
+
+    const ventaActivaPorProducto = {}
+    ventas.forEach((v) => {
+      if (!v?.IDProducto || v?.cancelada) return
+      if (!ventaActivaPorProducto[v.IDProducto]) ventaActivaPorProducto[v.IDProducto] = v
+    })
+
+    const inconsistentes = productos.filter((p) => {
+      if (!p?.id || statusRepairInFlight.current.has(p.id)) return false
+      const venta = ventaActivaPorProducto[p.id]
+      if (!venta) return false
+      return (
+        p.vendido !== true ||
+        p.devolucion !== false ||
+        p.enStock !== false ||
+        (venta.IDVenta && p.IDVenta !== venta.IDVenta) ||
+        (venta.FechaVenta && p.FechaVenta !== venta.FechaVenta)
+      )
+    })
+
+    inconsistentes.forEach((p) => {
+      const venta = ventaActivaPorProducto[p.id]
+      if (!venta) return
+      statusRepairInFlight.current.add(p.id)
+      updateDoc(ref('productos', p.id), {
+        vendido: true,
+        devolucion: false,
+        enStock: false,
+        IDVenta: venta.IDVenta || p.IDVenta || '',
+        FechaVenta: venta.FechaVenta || p.FechaVenta || '',
+      })
+        .catch((err) => {
+          // eslint-disable-next-line no-console
+          console.error('No se pudo sincronizar producto con venta activa:', p.id, err)
+        })
+        .finally(() => {
+          statusRepairInFlight.current.delete(p.id)
+        })
+    })
+  }, [productos, ventas])
 
   // Report unexpected runtime errors without dropping the current screen.
   useEffect(() => {
@@ -380,6 +481,14 @@ export function AppProvider({ children }) {
   const updateProducto = (id, data) => run(async () => {
     const current = productos.find(x => x.id === id) || {}
     const clean = ensureProductoValido(data, current)
+    if (clean.vendido) {
+      clean.devolucion = false
+      clean.enStock = false
+    }
+    if (clean.devolucion) {
+      clean.vendido = false
+      clean.enStock = false
+    }
     const cat = categorias.find(c => c.id === clean.categoria)
     if (cat) clean.porcProveedor = cat.porcentaje
     await updateDoc(ref('productos', id), { ...clean, _new: deleteField() })
@@ -468,6 +577,11 @@ export function AppProvider({ children }) {
       const patch = {
         notas: descripcion.trim(),
         precio,
+        vendido: true,
+        enStock: false,
+        devolucion: false,
+        FechaVenta: venta.FechaVenta || producto.FechaVenta || '',
+        IDVenta: venta.IDVenta,
       }
       if (!producto.categoria && venta.Categoria) patch.categoria = venta.Categoria
       if (!producto.proveedorID && venta.ProveedorID) patch.proveedorID = venta.ProveedorID
@@ -510,7 +624,13 @@ export function AppProvider({ children }) {
         EsCuentaCorriente: esCc,
         cancelada: false,
       })
-      batch.update(ref('productos', item.id), { vendido: true, enStock: false, FechaVenta: fecha, IDVenta: idVenta })
+      batch.update(ref('productos', item.id), {
+        vendido: true,
+        enStock: false,
+        devolucion: false,
+        FechaVenta: fecha,
+        IDVenta: idVenta,
+      })
     }
 
     // Si es CC → crear el registro de CC automáticamente

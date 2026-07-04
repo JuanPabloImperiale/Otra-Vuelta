@@ -45,6 +45,6 @@ export const NAV = [
   { id: 'proveedores', icon: '🤝', label: 'Proveedores' },
   { id: 'pagos',       icon: '💸', label: 'Pagos'       },
   { id: 'cuentas',     icon: '💳', label: 'Ctas. Ctes.' },
-  { id: 'gastos',      icon: '📋', label: 'Gastos'      },
+  { id: 'gastos',      icon: '📋', label: 'Ganancia'    },
   { id: 'config',      icon: '⚙️', label: 'Config'      },
 ]
